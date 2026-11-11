@@ -1,22 +1,16 @@
 # Inference Control Plane
 
-Reusable, open-source inference observability and optimization control plane. It lets you connect, inspect, and optimize existing inference pipelines (Helicone, Langfuse, OpenTelemetry, vLLM) from a host application without moving that logic into the host.
-
-## About Freuron
-
-[Freuron](https://freuron.com) is an AI platform where teams train, fine-tune, and serve their own language models. Inference observability — understanding what a model costs, how fast it answers, and where capacity is wasted — is a core part of that platform.
-
-This repository is the open-source edition of an important part of Freuron: the inference control plane that runs in production inside Freuron to inspect and optimize inference workloads. We use this same package ourselves, and we are releasing it so anyone can connect, inspect, and optimize their existing inference pipelines — with vLLM, Langfuse, Helicone, or OpenTelemetry — without adopting the rest of Freuron.
+Reusable, open-source inference observability and optimization control plane. It lets you connect, inspect, and optimize existing inference pipelines (Helicone, Langfuse, OpenTelemetry, vLLM) from a host application without moving that logic into the host. This package runs in production at [Freuron](https://freuron.com), the AI platform where teams train, fine-tune, and serve their own language models; it is the open-source edition of the inference control plane Freuron uses to inspect and optimize its workloads, released so anyone can get the same visibility into their own pipelines without adopting the rest of the platform.
 
 ## What it does
 
 - Provider adapters for Helicone, Langfuse, and OpenTelemetry (OTLP) that pull and normalize inference events.
-- Deterministic workload analysis: scoring, cost/latency/quality projections against a managed target rate, and migration-candidate detection.
+- Deterministic workload aggregation with cost/latency/quality projections against a caller-supplied target rate.
 - Read-only vLLM monitoring via Prometheus `/metrics` and `/health` (GET only).
 - Evidence-based recommendations and measured-vs-estimated comparisons between a current endpoint and a managed serving pool.
 - Sample-data generation for evaluating the analysis without real provider data.
 
-The package is stateless. The host application owns authentication, persistence, pricing configuration, and credential storage, and injects them as arguments. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The package is stateless. The host application owns authentication, persistence, pricing configuration, and credential storage, and injects them as arguments. See the [architecture documentation](https://github.com/yavuzhansarmaz/inference-control-plane/blob/main/docs/ARCHITECTURE.md).
 
 ## Install
 
@@ -83,7 +77,7 @@ summary, opportunities, assumptions = analyze_events(
 
 - Serving-pool payloads without measured per-replica `resources` read as `None` for those fields.
 - No snapshot history or polling: `collect()` is a single point-in-time read. Callers that need rates call `derive_rates` on two snapshots they collected themselves.
-- Host-application telemetry, persistence, and billing are not part of this package; see `docs/ARCHITECTURE.md`.
+- Host-application telemetry, persistence, and billing are not part of this package; see the architecture documentation linked above.
 
 ## Development
 
@@ -95,8 +89,8 @@ python -m ruff check src tests
 
 ## Releasing / rollback
 
-See [docs/RELEASING.md](docs/RELEASING.md). Consumers pin an exact version; rollback is pinning the previous version and redeploying — no data migration is involved.
+See the [releasing guide](https://github.com/yavuzhansarmaz/inference-control-plane/blob/main/docs/RELEASING.md). Consumers pin an exact version; rollback is pinning the previous version and redeploying — no data migration is involved.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0 — see the [license](https://github.com/yavuzhansarmaz/inference-control-plane/blob/main/LICENSE).
