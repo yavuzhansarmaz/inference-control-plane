@@ -14,10 +14,18 @@ name: Auto Release
 # 2. The plan job refuses to run for github-actions[bot] actors and
 #    for head commits whose message contains "[skip ci]".
 # Tag pushes by this workflow use GITHUB_TOKEN, which by GitHub design
-# does not start new workflow runs except workflow_run/workflow_dispatch
-# chains — publish.yml is triggered by the tag push event itself in the
-# maintainer flow; if a token-pushed tag ever fails to trigger it, run
-# the Publish workflow manually for that tag.
+# does NOT trigger publish.yml (token-pushed events do not start new
+# workflow runs, except workflow_run/workflow_dispatch chains). The
+# release job therefore explicitly dispatches publish.yml on the new
+# tag ref after pushing it:
+#   gh workflow run publish.yml --ref vX.Y.Z -f target=pypi
+# workflow_dispatch IS allowed with GITHUB_TOKEN, and dispatching on
+# the tag ref keeps github.ref == refs/tags/vX.Y.Z, so publish.yml's
+# validate job checks the tag/version contract and github-release
+# still runs. target=pypi routes the dispatch through the same
+# TestPyPI -> smoke gate before real PyPI (no bypass). Loop safety:
+# publish.yml never triggers CI or this workflow, and the release
+# commit still carries [skip ci], so no cycle is introduced.
 
 on:
   workflow_run:
@@ -99,6 +107,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Required for `gh workflow run` (workflow_dispatch) below.
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -115,7 +125,7 @@ jobs:
           fi
       - name: Set version and changelog skeleton
         run: python scripts/set_version.py "${{ needs.plan.outputs.version }}"
-      - name: Commit, tag and push (triggers publish.yml)
+      - name: Commit, tag and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -124,3 +134,10 @@ jobs:
           git tag -a "v${{ needs.plan.outputs.version }}" -m "Release v${{ needs.plan.outputs.version }}"
           git push origin HEAD:main
           git push origin "v${{ needs.plan.outputs.version }}"
+      # The GITHUB_TOKEN tag push above cannot trigger publish.yml on
+      # its own (GitHub suppresses workflow runs for token-pushed
+      # events). Dispatch it explicitly on the tag ref; see header.
+      - name: Dispatch publish.yml for the new tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run publish.yml --ref "v${{ needs.plan.outputs.version }}" -f target=pypi
