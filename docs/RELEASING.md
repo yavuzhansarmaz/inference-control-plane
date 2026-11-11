@@ -9,23 +9,21 @@ stored in the repository. The workflow is
 `.github/workflows/publish.yml`: pushing a `v*` tag publishes to PyPI;
 `workflow_dispatch` can publish to TestPyPI (default) or PyPI manually.
 
-> Placeholder URLs: `project.urls` in `pyproject.toml` currently point at
-> `https://github.com/inference-control-plane/inference-control-plane`, which is a
-> placeholder until the real GitHub repository exists. Update every URL
-> (and the trusted-publisher settings below) if the org/repo name differs.
+> Repository: `https://github.com/yavuzhansarmaz/inference-control-plane`.
+> The trusted-publisher settings below use this owner/repo.
 
 ## One-time manual setup (maintainer)
 
 1. Create a PyPI account at https://pypi.org/account/register/ and enable
    2FA. Repeat on https://test.pypi.org if you will use TestPyPI.
 2. Create the GitHub repository assumed above
-   (`inference-control-plane/inference-control-plane`), push this code, and create
+   (`yavuzhansarmaz/inference-control-plane`), push this code, and create
    two GitHub Environments named `pypi` and `testpypi` (Settings →
    Environments). Optionally add required reviewers on `pypi`.
 3. Register a *pending publisher* on PyPI before the first release:
    PyPI → Your account → Publishing → "Add a new pending publisher":
    - PyPI project name: `inference-control-plane`
-   - Owner: `inference-control-plane` · Repository: `inference-control-plane`
+   - Owner: `yavuzhansarmaz` · Repository: `inference-control-plane`
    - Workflow filename: `publish.yml` · Environment name: `pypi`
    Do the same on TestPyPI with environment name `testpypi`.
    A pending publisher lets the first OIDC publish create the project;

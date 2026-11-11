@@ -26,7 +26,6 @@ pip install inference-control-plane
 pip install -e ./inference-control-plane
 ```
 
-> The `project.urls` in `pyproject.toml` use the placeholder `https://github.com/inference-control-plane/inference-control-plane` until the real repository exists.
 
 ## Quick start (vLLM, read-only)
 
