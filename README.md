@@ -16,10 +16,9 @@ The package is stateless. The host application owns authentication, persistence,
 
 ```bash
 pip install inference-control-plane
-# local development against a checkout:
-pip install -e ./inference-control-plane
+# local development against a checkout (run inside the repository root):
+pip install -e .
 ```
-
 
 ## Quick start (vLLM, read-only)
 
