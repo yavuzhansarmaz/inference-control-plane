@@ -14,8 +14,50 @@ on:
 permissions:
   contents: read
 
+# Serialize publish runs: never cancel a release already in flight.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
 jobs:
+  # CI gate, embedded on purpose: tag pushes do not reliably exercise
+  # ci.yml in this pipeline's flow, so tests+lint run here and every
+  # publish job is chained behind this job via `needs`.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+      - name: Lint
+        run: python -m ruff check src tests
+      - name: Test
+        run: python -m pytest -q
+
+  # Tag/version contract: on tag pushes, vX.Y.Z must equal both
+  # pyproject.toml's version and __version__. Any mismatch fails here
+  # and blocks build/publish. Non-tag runs pass through (see script).
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package (for __version__)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Validate tag against package version
+        run: python scripts/validate_tag_version.py "${{ github.ref }}"
+
   build:
+    needs: [test, validate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,3 +110,65 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+
+  # GitHub Release only for real PyPI releases (tag pushes). The
+  # TestPyPI path never reaches publish-pypi, so it never gets here.
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Generate SHA-256 checksums
+        run: |
+          cd dist
+          for f in *.whl *.tar.gz; do
+            [ -e "$f" ] && sha256sum "$f" > "$f.sha256"
+          done
+          sha256sum *.whl *.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          changelog = Path("CHANGELOG.md")
+          notes = ""
+          if changelog.exists():
+              lines = changelog.read_text(encoding="utf-8").splitlines()
+              section: list[str] = []
+              capturing = False
+              for line in lines:
+                  heading = re.match(r"##\s+(.+?)\s*$", line)
+                  if heading:
+                      if capturing:
+                          break
+                      capturing = heading.group(1).strip().lstrip("v") == version
+                      continue
+                  if capturing:
+                      section.append(line)
+              notes = "\n".join(section).strip()
+          if not notes:
+              notes = f"Release {version}. See CHANGELOG.md for details."
+          Path("release-notes.md").write_text(notes + "\n", encoding="utf-8")
+          print(notes)
+          PY
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/SHA256SUMS.txt
