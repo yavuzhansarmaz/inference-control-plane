@@ -1,0 +1,126 @@
+name: Auto Release
+
+# Automatic version bump, pairproof-style: when CI finishes green on
+# main, plan the next version from the Conventional Commits since the
+# latest v* tag (scripts/plan_release_version.py). If a release is due,
+# bump pyproject.toml + CHANGELOG.md (scripts/set_version.py), commit
+# as "Release vX.Y.Z [skip ci]", tag vX.Y.Z and push both — the tag
+# push is what triggers publish.yml.
+#
+# Loop protection, two layers:
+# 1. The bot's own release commit carries "[skip ci]", so it does not
+#    re-trigger ci.yml, and therefore never re-triggers this workflow
+#    through workflow_run.
+# 2. The plan job refuses to run for github-actions[bot] actors and
+#    for head commits whose message contains "[skip ci]".
+# Tag pushes by this workflow use GITHUB_TOKEN, which by GitHub design
+# does not start new workflow runs except workflow_run/workflow_dispatch
+# chains — publish.yml is triggered by the tag push event itself in the
+# maintainer flow; if a token-pushed tag ever fails to trigger it, run
+# the Publish workflow manually for that tag.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Plan only; do not commit, tag or push"
+        type: boolean
+        default: true
+
+# One auto-release at a time; never cancel one in flight.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan release version
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      bump: ${{ steps.plan.outputs.bump }}
+      release: ${{ steps.plan.outputs.release }}
+      dry_run: ${{ steps.flags.outputs.dry_run }}
+    steps:
+      - name: Refuse bot or [skip ci] heads (loop protection)
+        if: github.actor == 'github-actions[bot]'
+        run: |
+          echo "Actor is github-actions[bot]; refusing to plan a release."
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - name: Refuse [skip ci] head commits (loop protection)
+        run: |
+          message="$(git log -1 --format=%B)"
+          case "$message" in
+            *"[skip ci]"*)
+              echo "Head commit carries [skip ci]; no release planned."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+        id: guard
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Plan release version
+        id: plan
+        if: steps.guard.outputs.release != 'false'
+        run: python scripts/plan_release_version.py
+      - name: Resolve dry-run flag
+        id: flags
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Summarize plan
+        run: |
+          echo "version=${{ steps.plan.outputs.version }} bump=${{ steps.plan.outputs.bump }} release=${{ steps.plan.outputs.release }} dry_run=${{ steps.flags.outputs.dry_run }}"
+
+  release:
+    name: Bump, tag and push
+    needs: plan
+    if: needs.plan.outputs.release == 'true' && needs.plan.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Refuse if the tag already exists
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v${{ needs.plan.outputs.version }}" >/dev/null 2>&1; then
+            echo "v${{ needs.plan.outputs.version }} already exists; nothing to do."
+            exit 1
+          fi
+      - name: Set version and changelog skeleton
+        run: python scripts/set_version.py "${{ needs.plan.outputs.version }}"
+      - name: Commit, tag and push (triggers publish.yml)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml CHANGELOG.md
+          git commit -m "Release v${{ needs.plan.outputs.version }} [skip ci]"
+          git tag -a "v${{ needs.plan.outputs.version }}" -m "Release v${{ needs.plan.outputs.version }}"
+          git push origin HEAD:main
+          git push origin "v${{ needs.plan.outputs.version }}"
