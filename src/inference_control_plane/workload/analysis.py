@@ -1,4 +1,4 @@
-"""Generic workload aggregation and transparent managed-target projections."""
+"""Generic workload aggregation and transparent target-rate projections."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import uuid
 from collections import defaultdict
 from statistics import mean
 from typing import Any
+
+from inference_control_plane.workload.events import WorkloadEvent, normalize_events
 
 
 def _round(value: float | None, digits: int = 2) -> float | None:
@@ -44,7 +46,7 @@ def _workload_aggregate(
     ttft_ms: float,
     output_tokens_per_second: float,
 ) -> dict[str, Any]:
-    """Generic per-workload aggregation and managed-target cost/latency projection."""
+    """Generic per-workload aggregation and target-rate cost/latency projection."""
     request_count = len(rows)
     input_tokens = sum(max(0, int(row.get("input_tokens") or 0)) for row in rows)
     output_tokens = sum(max(0, int(row.get("output_tokens") or 0)) for row in rows)
@@ -120,14 +122,19 @@ def _workload_aggregate(
 
 
 def analyze_events(
-    events: list[dict[str, Any]],
+    events: list[dict[str, Any] | WorkloadEvent],
     *,
     window_days: int,
     managed_rate_usd_per_million: float,
     ttft_ms: float,
     output_tokens_per_second: float,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
-    """Aggregate normalized events per workload. No product or migration scoring."""
+    """Aggregate normalized events per workload. No product or migration scoring.
+
+    Accepts plain dicts or ``WorkloadEvent`` values (normalized at entry);
+    return types are unchanged.
+    """
+    events = normalize_events(events)
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for event in events:
         grouped[str(event.get("workload_key") or "unclassified")].append(event)
@@ -154,7 +161,7 @@ def analyze_events(
         "workload_count": len(opportunities),
     }
     assumptions = [
-        f"Managed inference is modeled at ${managed_rate_usd_per_million:.2f} per 1M total tokens.",
+        f"The target rate is modeled at ${managed_rate_usd_per_million:.2f} per 1M total tokens.",
         f"Latency uses {ttft_ms:.0f} ms time-to-first-token and {output_tokens_per_second:.0f} output tokens/second.",
         "Monthly projections scale the selected historical window to 30 days.",
         "Projections are estimates, not production benchmarks; validate under representative load before acting on them.",

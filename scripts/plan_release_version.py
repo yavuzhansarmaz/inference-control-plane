@@ -21,7 +21,7 @@ Bump rules (Conventional Commits):
 - only ``docs``/``chore``/``test``/``ci``/other types, or messages with
   no conventional type at all -> no release
 
-Pairproof discipline, adapted: with no tag yet, the version already in
+Release discipline: with no tag yet, the version already in
 ``pyproject.toml`` is the first release. If ``pyproject.toml`` is ahead
 of the latest tag (a manual bump landed on main), that version ships
 as-is. If it lags the tag, the bump is computed from the tag version so

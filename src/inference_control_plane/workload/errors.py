@@ -1,10 +1,10 @@
-"""Domain errors shared by Workload Optimizer services and routes."""
+"""Workload error types (compatibility re-export).
 
+Canonical definition lives in :mod:`inference_control_plane.errors`.
+``WorkloadOptimizerError`` is a deprecated alias of ``ControlPlaneError``
+kept so the 0.1.x published API keeps working.
+"""
 
-class WorkloadOptimizerError(RuntimeError):
-    def __init__(
-        self, message: str, *, status_code: int = 400, code: str = "workload_optimizer_error"
-    ):
-        self.status_code = status_code
-        self.code = code
-        super().__init__(message)
+from inference_control_plane.errors import ControlPlaneError, WorkloadOptimizerError
+
+__all__ = ["ControlPlaneError", "WorkloadOptimizerError"]

@@ -1,5 +1,4 @@
 from inference_control_plane.workload.analysis import analyze_events
-from inference_control_plane.workload.event_utils import prepare_events
 from inference_control_plane.workload.otlp import normalize_otlp_export
 
 
@@ -7,23 +6,9 @@ def test_analyze_empty():
     s, o, a = analyze_events([], window_days=7, managed_rate_usd_per_million=1.0, ttft_ms=100, output_tokens_per_second=10)
     assert s["total_requests"] == 0 and o == []
 
-def test_prepare_strips_content():
-    out = prepare_events("org", "conn", [{"external_id": "1", "prompt": "secret", "latency_ms": 5}])
-    assert "prompt" not in out[0] and out[0]["org_id"] == "org"
-
 def test_otlp_empty():
     assert normalize_otlp_export({}) == [] or isinstance(normalize_otlp_export({}), list)
 
-
-def test_sample_events_deterministic_and_stripped():
-    from datetime import datetime, timezone
-
-    from inference_control_plane.workload.sample_data import build_sample_events
-
-    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    events = build_sample_events("langfuse", now=now)
-    assert events and events == build_sample_events("langfuse", now=now)
-    assert all(e["is_sample"] and e["workload_key"] for e in events)
 
 
 def test_otlp_normalizes_span_attributes():

@@ -17,14 +17,25 @@ application injects everything product-specific.
 
 | Module | Responsibility |
 |---|---|
-| `inference_control_plane.models` | Public pydantic models (`EndpointConfig`, `MetricSnapshot`, `ComparisonRow`, ...). Missing metrics are `None`, never fabricated zeros. |
-| `inference_control_plane.vllm` | Read-only vLLM collector (`VllmClient`), Prometheus parsing, derived rates, cost estimates. GET only. |
-| `inference_control_plane.recommendations` | Evidence-based recommendations and `compare_snapshots` (current vs managed). |
-| `inference_control_plane.pool_status` | Adapts a generic serving-pool status payload to a `MetricSnapshot`. |
+| `inference_control_plane.models` | Public pydantic models (`EndpointConfig`, `MetricSnapshot`, `ComparisonRow`, `FleetSummary`, `ActionSuggestion`, ...). Missing metrics are `None`, never fabricated zeros. `ActionSuggestion` is review-only (`requires_approval=True`). |
+| `inference_control_plane.vllm` | Read-only vLLM collector (`VllmClient`, capabilities probe) and `snapshot_from_metrics`. GET only. Re-exports `parse_prometheus`, `derive_rates`, `estimate_effective_cost` from their modules below. |
+| `inference_control_plane.prometheus` | Prometheus exposition parsing, histogram p95, error-rate-from-totals (shared by vLLM/SGLang). |
+| `inference_control_plane.rates` | Derived counter rates (`derive_rates`) and effective-cost estimates. |
+| `inference_control_plane.metrics_client` | Private shared read-only metrics-client scaffold (SSRF validation, never-raise collect/test) for `VllmClient`/`SglangClient`. |
+| `inference_control_plane.recommendations` | Facade re-exporting evidence-based recommendations and `compare_snapshots` (current vs managed) from the four modules below. |
+| `inference_control_plane.snapshot_recommendations` / `history_recommendations` | `recommend_from_snapshot`; window-aggregated `recommend_from_history`. |
+| `inference_control_plane.comparison` / `actions` | `compare_snapshots`; review-only `suggest_actions` (`requires_approval=True`). |
+| `inference_control_plane.timeutil` | `now_iso` and `parse_iso` (naive timestamps treated as UTC). |
+| `inference_control_plane.thresholds` | Shared recommendation cut-offs used by snapshot, history, and fleet recommendations. |
+| `inference_control_plane.errors` / `workload.errors` | Canonical `ControlPlaneError`. `workload.errors` re-exports it. `WorkloadOptimizerError` is a deprecated alias for 0.1.x. |
 | `inference_control_plane.workload.adapters` / `adapter_base` | Provider adapter registry and shared contracts, including URL validation (SSRF guard). |
 | `inference_control_plane.workload.helicone` / `langfuse` / `otlp` | Provider-specific event pull and normalization. |
 | `inference_control_plane.workload.analysis` | Deterministic workload scoring and managed-target projections (`analyze_events`). |
-| `inference_control_plane.workload.event_utils` / `sample_data` / `errors` | Event preparation, synthetic sample data, shared error type. |
+| `inference_control_plane.history` | In-memory bounded `SnapshotHistory` ring buffer and asyncio `SnapshotPoller`; caller-owned, no persistence, no threads. |
+| `inference_control_plane.fleet` | Fleet aggregation (`FleetSummary`) and fleet-level recommendations over named snapshots. |
+| `inference_control_plane.exporter` | Pure `render_prometheus` text rendering; no server. See `docs/grafana-dashboard.json`. |
+| `inference_control_plane.sglang` | Read-only SGLang collector (`SglangClient`), same shape as `vllm`. |
+| `inference_control_plane.workload.events` | Typed `WorkloadEvent` model. `analyze_events` accepts dicts or events and returns dicts. |
 
 ## Boundary
 
@@ -69,11 +80,10 @@ from the managed snapshot's status (`measured` only when it is `ok`).
 
 ### Custom pool payloads
 
-`snapshot_from_pool_status` accepts any payload with a `replicas` list whose
-ready entries may carry `engine_unfinished_requests` and a `resources` dict
-(`kv_cache_utilization`, `gpu_sm_utilization`). Hosts with a different pool
-shape should adapt their payload to this shape (or to `MetricSnapshot`
-directly) in host code, not in this package.
+The package does not parse serving-pool status payloads. The host maps its
+pool into a `MetricSnapshot` (unset metrics stay `None`) and passes that
+snapshot as `managed_snapshot` to `compare_snapshots`. `kind` is `measured`
+only when that snapshot's status is `ok`.
 
 ## Design decisions
 
@@ -90,9 +100,10 @@ directly) in host code, not in this package.
 
 ## Known limitations
 
-- Serving-pool payloads without measured per-replica `resources` read as
-  `None` for those fields.
-- No snapshot history or polling: snapshots are point-in-time collections;
-  the package keeps no time series and does not poll endpoints.
+- A managed serving pool enters comparison only as a host-built
+  `MetricSnapshot`. Fields the host leaves unset stay `None`.
+- Snapshot history and polling are in-memory and caller-owned:
+  `SnapshotHistory`/`SnapshotPoller` keep a bounded ring buffer in memory
+  only; the host owns persistence, scheduling, and credentials.
 
 Host-application telemetry, persistence, and billing stay with the host and are not part of this package.

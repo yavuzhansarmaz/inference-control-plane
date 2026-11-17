@@ -1,14 +1,13 @@
 # Inference Control Plane
 
-Reusable, open-source inference observability and optimization control plane. It lets you connect, inspect, and optimize existing inference pipelines (Helicone, Langfuse, OpenTelemetry, vLLM) from a host application without moving that logic into the host. This package runs in production at [Freuron](https://freuron.com), the AI platform where teams train, fine-tune, and serve their own language models; it is the open-source edition of the inference control plane Freuron uses to inspect and optimize its workloads, released so anyone can get the same visibility into their own pipelines without adopting the rest of the platform.
+Reusable, open-source inference observability and optimization control plane. It lets you connect, inspect, and optimize existing inference pipelines (Helicone, Langfuse, OpenTelemetry, vLLM, SGLang) from a host application without moving that logic into the host. This package runs in production at [Freuron](https://freuron.com), the AI platform where teams train, fine-tune, and serve their own language models; it is the open-source edition of the inference control plane Freuron uses to inspect and optimize its workloads, released so anyone can get the same visibility into their own pipelines without adopting the rest of the platform.
 
 ## What it does
 
 - Provider adapters for Helicone, Langfuse, and OpenTelemetry (OTLP) that pull and normalize inference events.
 - Deterministic workload aggregation with cost/latency/quality projections against a caller-supplied target rate.
-- Read-only vLLM monitoring via Prometheus `/metrics` and `/health` (GET only).
+- Read-only vLLM and SGLang monitoring via Prometheus `/metrics` and `/health` (GET only).
 - Evidence-based recommendations and measured-vs-estimated comparisons between a current endpoint and a managed serving pool.
-- Sample-data generation for evaluating the analysis without real provider data.
 
 The package is stateless. The host application owns authentication, persistence, pricing configuration, and credential storage, and injects them as arguments. See the [architecture documentation](https://github.com/yavuzhansarmaz/inference-control-plane/blob/main/docs/ARCHITECTURE.md).
 
@@ -34,6 +33,30 @@ print(recommend_from_snapshot(snapshot))   # evidence-based, review-only
 
 Private/self-hosted endpoints require `allow_private_endpoints=True` (explicit opt-in; the SSRF guard otherwise rejects non-global addresses, credentials in URLs, and non-HTTPS).
 
+## Snapshot history and polling
+
+`SnapshotHistory(maxlen=...)` is a bounded in-memory ring buffer of snapshots (`append`, `window(seconds)`, `last(n)`); the host owns any persistence. `SnapshotPoller(client, history, interval_seconds=...)` polls any client with `async collect()` via asyncio (no threads), recording unreachable snapshots instead of raising; run it with `await poller.run(stop_event)`. `rates_from_history(history)` derives rates from the first/last snapshots of a window; unknown rates stay `None`.
+
+## Window and fleet recommendations
+
+`recommend_from_history(history_or_snapshots, window_seconds=...)` aggregates thresholds over a window, cites sample counts in its evidence, and scales confidence with sample count (empty input yields `insufficient_evidence`, never an error). `summarize_fleet({"name": snapshot, ...})` builds a `FleetSummary` (status counts, worst offenders by name, means over present values; count sums name their coverage), and `recommend_from_fleet(...)` flags cases such as one saturated endpoint beside idle ones (`fleet_load_imbalance`).
+
+## Action suggestions
+
+`suggest_actions(snapshot_or_history)` maps recommendations to `ActionSuggestion`s (`target_parameter`, `current_value`, `suggested_value`, rationale, expected effect) that always require human approval. No number is suggested unless it can be computed from the given values — otherwise `suggested_value` is `None` with the reasoning in the rationale.
+
+## Prometheus exporter
+
+`render_prometheus(snapshots, prefix="inference_control_plane")` renders gauges with an `endpoint` label, skipping `None` values entirely, plus a `snapshot_status{status=...} 1` series per endpoint. It is a pure function — serving it is the host's job. A matching importable dashboard is in [docs/grafana-dashboard.json](docs/grafana-dashboard.json).
+
+## SGLang (read-only)
+
+`SglangClient` mirrors `VllmClient` for SGLang `/metrics` (provider `"sglang"`, same SSRF validation and never-raise collection). `snapshot_from_sglang_metrics(text, source=...)` maps `sglang:num_running_reqs`, `sglang:num_queue_reqs`, `sglang:token_usage`, and counters; `tokens_per_second` comes only from the `sglang:gen_throughput` rate gauge.
+
+## Typed workload events
+
+`WorkloadEvent` (from `inference_control_plane.workload`) is a pydantic model of the normalized adapter event dict, keeping extra fields through `to_dict()`. `analyze_events` accepts `list[dict | WorkloadEvent]` and still returns dicts.
+
 ## Capabilities probe
 
 `VllmClient.capabilities()` probes `/health`, `/v1/models`, and `/metrics` with GET only and never raises: failures become notes in `EndpointCapabilities.errors`. It reports `health_ok`, the served `models`, and `metrics_ok`. Use it to check an endpoint before trusting a snapshot.
@@ -54,7 +77,7 @@ Private/self-hosted endpoints require `allow_private_endpoints=True` (explicit o
 - `estimated` — derived from measured inputs (for example a rate or a pool side whose status is not `ok`).
 - `user_assumption` — computed from a user-supplied input such as `gpu_hourly_usd`.
 
-`snapshot_from_pool_status(pool_payload)` converts a generic serving-pool payload (including per-replica `resources`) into a `MetricSnapshot` so it can be compared with an external vLLM snapshot. Missing metrics stay `None`, never `0`.
+Pass a host-built `MetricSnapshot` as `managed_snapshot` to compare a current endpoint with a managed serving pool. The host maps replica fields into that snapshot. Any metric left unset stays `None`.
 
 ## Workload analysis
 
@@ -74,8 +97,8 @@ summary, opportunities, assumptions = analyze_events(
 
 ## Known limitations
 
-- Serving-pool payloads without measured per-replica `resources` read as `None` for those fields.
-- No snapshot history or polling: `collect()` is a single point-in-time read. Callers that need rates call `derive_rates` on two snapshots they collected themselves.
+- A managed serving pool is compared through a `MetricSnapshot` the host supplies. Fields the host leaves unset stay `None`.
+- Snapshot history is in-memory only: the host owns persistence of anything the poller collects.
 - Host-application telemetry, persistence, and billing are not part of this package; see the architecture documentation linked above.
 
 ## Development

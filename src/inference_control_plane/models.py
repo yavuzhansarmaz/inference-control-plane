@@ -74,6 +74,54 @@ class Recommendation(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     confidence: str = "low"
 
+class ActionSuggestion(BaseModel):
+    """A human-approved, review-only suggested change. Never auto-applied."""
+
+    code: str
+    target_parameter: str
+    current_value: float | str | None = None
+    suggested_value: float | str | None = None
+    rationale: str = ""
+    expected_effect: str = ""
+    requires_approval: bool = True
+
+
+class FleetEndpoint(BaseModel):
+    name: str
+    snapshot: MetricSnapshot
+
+
+class FleetSummary(BaseModel):
+    """Fleet aggregate. Ratios are averaged over present values, never summed.
+
+    Count sums (requests running/waiting) include only endpoints reporting
+    that metric; ``*_reporting`` fields name that coverage.
+    ``endpoints_reporting`` counts endpoints whose status is not
+    ``unreachable``.
+    """
+
+    endpoint_count: int = 0
+    endpoints_reporting: int = 0
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    endpoint_names: list[str] = Field(default_factory=list)
+    worst_kv_cache_name: str | None = None
+    worst_kv_cache_usage_ratio: float | None = None
+    worst_requests_waiting_name: str | None = None
+    worst_requests_waiting: float | None = None
+    worst_error_rate_name: str | None = None
+    worst_error_rate: float | None = None
+    mean_kv_cache_usage_ratio: float | None = None
+    mean_error_rate: float | None = None
+    mean_requests_waiting: float | None = None
+    total_requests_running: float | None = None
+    total_requests_waiting: float | None = None
+    requests_running_reporting: int = 0
+    requests_waiting_reporting: int = 0
+    kv_cache_reporting: int = 0
+    saturated_endpoints: list[str] = Field(default_factory=list)
+    idle_endpoints: list[str] = Field(default_factory=list)
+
+
 class ComparisonRow(BaseModel):
     metric: str
     current: float | None = None

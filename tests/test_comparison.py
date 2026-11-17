@@ -1,4 +1,4 @@
-from inference_control_plane import compare_snapshots, snapshot_from_pool_status
+from inference_control_plane import compare_snapshots
 from inference_control_plane.models import MetricSnapshot
 
 
@@ -11,11 +11,11 @@ def _current():
 
 
 def test_compare_with_managed_snapshot_is_measured():
-    pool = {"replicas": [{
-        "status": "ready", "engine_unfinished_requests": 3,
-        "resources": {"kv_cache_utilization": 0.4, "gpu_sm_utilization": 0.7},
-    }]}
-    managed = snapshot_from_pool_status(pool)
+    managed = MetricSnapshot(
+        provider="managed", status="ok", collected_at="now",
+        source="managed-serving-pool", requests_running=3.0,
+        kv_cache_usage_ratio=0.4, gpu_utilization_ratio=0.7,
+    )
     rows = {r.metric: r for r in compare_snapshots(
         _current(), managed_snapshot=managed, managed_kind="measured")}
     assert rows["requests_running"].managed == 3.0

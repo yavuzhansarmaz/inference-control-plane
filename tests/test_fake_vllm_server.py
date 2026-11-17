@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from inference_control_plane import EndpointConfig, VllmClient, compare_snapshots, derive_rates
-from inference_control_plane.pool_status import snapshot_from_pool_status
+from inference_control_plane.models import MetricSnapshot
 
 METRICS_V1 = """# HELP vllm:num_requests_running x
 vllm:num_requests_running 2.0
@@ -83,12 +83,12 @@ async def test_fake_server_collect_capabilities_and_compare():
     assert snap.error_rate == 0.1
     assert snap.ttft_p95_seconds is not None
 
-    # Comparison flow: current (fake vLLM) vs a generic serving-pool payload.
-    pool = {"replicas": [{
-        "status": "ready", "engine_unfinished_requests": 1,
-        "resources": {"kv_cache_utilization": 0.30, "gpu_sm_utilization": 0.55},
-    }]}
-    other = snapshot_from_pool_status(pool)
+    # Comparison flow: current (fake vLLM) vs a generic second snapshot.
+    other = MetricSnapshot(
+        provider="managed", status="ok", collected_at="now",
+        source="managed-serving-pool", requests_running=1.0,
+        kv_cache_usage_ratio=0.30, gpu_utilization_ratio=0.55,
+    )
     rows = {r.metric: r for r in compare_snapshots(snap, managed_snapshot=other, managed_kind="measured")}
     assert rows["requests_running"].current == 2.0
     assert rows["requests_running"].managed == 1.0

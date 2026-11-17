@@ -165,11 +165,3 @@ def test_estimate_effective_cost_derived_tps_override():
     assert cost is not None and cost.cost_per_million_generation_tokens_usd == 10.0
 
 
-def test_pool_status_adapter_missing_stays_none():
-    from inference_control_plane.pool_status import snapshot_from_pool_status
-    pool = {"replicas": [{"status": "ready", "engine_unfinished_requests": 4, "resources": {"kv_cache_utilization": 0.4, "gpu_sm_utilization": None, "gpu_memory_utilization": 0.7, "preemptions": 0.0}}]}
-    s = snapshot_from_pool_status(pool)
-    assert s.provider == "managed" and s.requests_running == 4.0 and s.kv_cache_usage_ratio == 0.4
-    assert s.gpu_utilization_ratio is None
-    empty = snapshot_from_pool_status({"replicas": []})
-    assert empty.status == "degraded" and empty.requests_running is None

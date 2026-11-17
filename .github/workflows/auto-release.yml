@@ -1,6 +1,6 @@
 name: Auto Release
 
-# Automatic version bump, pairproof-style: when CI finishes green on
+# Automatic version bump, conventional-commits style: when CI finishes green on
 # main, plan the next version from the Conventional Commits since the
 # latest v* tag (scripts/plan_release_version.py). If a release is due,
 # bump pyproject.toml + CHANGELOG.md (scripts/set_version.py), commit
