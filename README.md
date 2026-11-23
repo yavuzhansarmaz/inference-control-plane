@@ -2,6 +2,17 @@
 
 Reusable, open-source inference observability and optimization control plane. It lets you connect, inspect, and optimize existing inference pipelines (Helicone, Langfuse, OpenTelemetry, vLLM, SGLang) from a host application without moving that logic into the host. This package runs in production at [Freuron](https://freuron.com), the AI platform where teams train, fine-tune, and serve their own language models; it is the open-source edition of the inference control plane Freuron uses to inspect and optimize its workloads, released so anyone can get the same visibility into their own pipelines without adopting the rest of the platform.
 
+## The audit step of an AI Model Factory
+
+Freuron's [AI Model Factory](https://freuron.com/ai-model-factory) loop starts by
+auditing production traffic — which workloads are ready for a dedicated
+fine-tuned model — and this package is that audit layer. To close the loop,
+Freuron then runs the loop for you: four API calls (import, train, evaluate,
+switch) take a dataset to a production-ready model in under three hours, with
+more than two hours inside fine-tuning itself. See
+[LLM fine-tuning platform](https://freuron.com/llm-fine-tuning) and
+[private LLM inference](https://freuron.com/llm-inference).
+
 ## What it does
 
 - Provider adapters for Helicone, Langfuse, and OpenTelemetry (OTLP) that pull and normalize inference events.
